@@ -3,7 +3,7 @@ name: MailExpiry
 options:
   bundleIdPrefix: com.example.mailexpiry   # TODO: change to your own prefix
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"   # Foundation Models (on-device Apple Intelligence model) needs macOS 26
 settings:
   base:
     DEVELOPMENT_TEAM: ""                   # TODO: your Team ID
@@ -27,6 +27,7 @@ targets:
         com.apple.security.application-groups: ["$(TeamIdentifierPrefix)com.example.mailexpiry"]
     dependencies:
       - target: MailExpiryExtension
+      - sdk: FoundationModels.framework
   MailExpiryExtension:
     type: app-extension
     platform: macOS

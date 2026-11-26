@@ -1,16 +1,16 @@
 import Foundation
 
 /// File-based store in the shared App Group container.
-/// rules.json is written by the app, read by the extension.
-/// pending/<hash>.json: one file per expiring message, written by the extension and
-/// deleted by the app, so the two processes never edit the same file.
+/// rules.json: written by the app, read by the extension.
+/// messages/<hash>.json: one file per tracked message. The extension creates it once;
+/// after that only the app updates or deletes it.
 enum Store {
     static var root: URL {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroup)!
     }
     static var rulesURL: URL { root.appendingPathComponent("rules.json") }
-    static var pendingDir: URL {
-        let d = root.appendingPathComponent("pending", isDirectory: true)
+    static var messagesDir: URL {
+        let d = root.appendingPathComponent("messages", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -27,21 +27,25 @@ enum Store {
     static func fileURL(for messageID: String) -> URL {
         let safe = Data(messageID.utf8).base64EncodedString()
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
-        return pendingDir.appendingPathComponent("\(safe).json")
+        return messagesDir.appendingPathComponent("\(safe).json")
     }
 
-    static func addPending(_ p: PendingMessage) {
+    static func exists(_ messageID: String) -> Bool {
+        FileManager.default.fileExists(atPath: fileURL(for: messageID).path)
+    }
+
+    static func save(_ m: TrackedMessage) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        if let data = try? enc.encode(p) { try? data.write(to: fileURL(for: p.messageID), options: .atomic) }
+        if let data = try? enc.encode(m) { try? data.write(to: fileURL(for: m.messageID), options: .atomic) }
     }
 
-    static func loadPending() -> [PendingMessage] {
+    static func loadAll() -> [TrackedMessage] {
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        let files = (try? FileManager.default.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil)) ?? []
-        return files.compactMap { try? dec.decode(PendingMessage.self, from: Data(contentsOf: $0)) }
+        let files = (try? FileManager.default.contentsOfDirectory(at: messagesDir, includingPropertiesForKeys: nil)) ?? []
+        return files.compactMap { try? dec.decode(TrackedMessage.self, from: Data(contentsOf: $0)) }
     }
 
-    static func removePending(_ messageID: String) {
+    static func remove(_ messageID: String) {
         try? FileManager.default.removeItem(at: fileURL(for: messageID))
     }
 }

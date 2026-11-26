@@ -1,14 +1,23 @@
-# Mail Expiry (v1 scaffold, untested)
+# Mail Expiry (untested)
 
-Messages matching your rules get an orange background in Mail. If not handled within 24h they are moved to the account's archive mailbox. Nothing is deleted.
+Every new Inbox message is assessed by Apple's on-device model (Apple Intelligence, via Foundation Models). The archive date depends on the result:
+
+| Assessment | Example | Archived | Mail color |
+|---|---|---|---|
+| Fleeting | alerts, codes, newsletters, promos | 24h after arrival | orange |
+| Until a date | concert ticket, booking, invitation | end of the day after that date | yellow |
+| Needs attention | a person waiting for a reply, a bill | never | none |
+
+When unsure, the model is told to pick "needs attention". A message is never deleted, and it isn't archived if by then you've moved it out of the Inbox or flagged it.
+
+## Overrides
+- **Rules** (Settings): From / To / Subject, matched with contains / equals / ends with. Each rule picks an outcome: let the model decide, fleeting, archive after N days, keep, or ignore. The first matching rule wins.
+- **Per message** (menu bar > Messages…): change the category or date for any message, or choose "Always do this for this sender".
 
 ## How it works
-- **Mail extension (MailKit action handler)**: runs when a message arrives in an Inbox. If any rule matches (From / To / Subject; contains / equals / ends with), it colors the message orange and records its Message-ID in the shared App Group folder. MailKit cannot act on messages later, so it does nothing else.
-- **Menu bar app**: edits rules, and every 15 min checks messages past their 24h deadline through AppleScript:
-  - not in Inbox any more (archived, moved, deleted) → handled, forgotten
-  - flagged → handled, color cleared
-  - otherwise → moved to the archive mailbox
-- Only checks while Mail is running; overdue messages are archived on the next check after Mail opens.
+- **Mail extension (MailKit action handler)**: MailKit can only act when a message arrives. The extension waits for the body, saves the sender, subject and a text excerpt to the shared App Group folder, and applies any matching rule.
+- **Menu bar app**: every 15 min it assesses new messages with the model, colors them in Mail, and archives overdue ones through AppleScript. It only touches Mail while Mail is running.
+- The text excerpt is used only by the on-device model. Kept messages are forgotten after 14 days.
 
 ## Build
 1. `brew install xcodegen && xcodegen` in this folder, open `MailExpiry.xcodeproj`.
@@ -18,9 +27,14 @@ Messages matching your rules get an orange background in Mail. If not handled wi
 
 Distribution: Developer ID (outside the App Store), since the app scripts Mail.
 
+## Requirements
+macOS 26+ with Apple Intelligence turned on. Without it, messages stay unassessed and nothing is archived, apart from rule matches.
+
 ## Known limits / guesses
 - **Due date / "Remind Me" is not detected.** As far as I can tell Mail's AppleScript doesn't expose it. Flagging works.
 - Extension sees only messages delivered to an Inbox (per developer reports); messages filtered elsewhere are skipped.
 - Archive mailbox is looked up by name per account ("Archive" by default; Gmail: `[Gmail]/All Mail`).
 - Inbox lookup uses mailbox `INBOX` of each account — unverified for every account type.
+- If a dated message has no usable date, it is kept. If its date is already past, it is treated as fleeting.
+- The text extraction is a rough MIME parser, which is enough for the model.
 - Not compiled yet: written without a Mac.

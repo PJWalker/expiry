@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// Manual overrides. The first matching rule wins; anything unmatched is assessed by the Siri model.
 struct RulesView: View {
     @State private var rules = Store.loadRules()
     @AppStorage("archiveMailbox", store: UserDefaults(suiteName: Config.appGroup))
@@ -7,23 +8,34 @@ struct RulesView: View {
 
     var body: some View {
         Form {
-            Section("Messages matching any rule expire after 24 hours") {
+            Section {
                 ForEach($rules) { $rule in
                     HStack {
                         Toggle("", isOn: $rule.enabled).labelsHidden()
                         Picker("", selection: $rule.field) {
                             ForEach(Rule.Field.allCases, id: \.self) { Text($0.rawValue.capitalized) }
-                        }.labelsHidden().frame(width: 100)
+                        }.labelsHidden().frame(width: 90)
                         Picker("", selection: $rule.op) {
                             ForEach(Rule.Op.allCases, id: \.self) { Text($0.rawValue) }
-                        }.labelsHidden().frame(width: 110)
+                        }.labelsHidden().frame(width: 100)
                         TextField("value", text: $rule.value)
+                        Picker("", selection: $rule.outcome) {
+                            ForEach(Rule.Outcome.allCases, id: \.self) { Text($0.label) }
+                        }.labelsHidden().frame(width: 180)
+                        if rule.outcome == .afterDays {
+                            Stepper("\(rule.days)d", value: $rule.days, in: 1...365).frame(width: 70)
+                        }
                         Button(role: .destructive) { rules.removeAll { $0.id == rule.id } } label: {
                             Image(systemName: "minus.circle")
                         }.buttonStyle(.borderless)
                     }
                 }
+                .onMove { rules.move(fromOffsets: $0, toOffset: $1) }
                 Button("Add rule") { rules.append(Rule()) }
+            } header: {
+                Text("Overrides")
+            } footer: {
+                Text("First matching rule wins. Everything else is assessed by the on-device Siri model.")
             }
             Section("Archive") {
                 TextField("Archive mailbox name", text: $archiveMailbox)
@@ -31,7 +43,7 @@ struct RulesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 400)
-        .onChange(of: rules) { Store.saveRules($0) }
+        .frame(width: 760, height: 440)
+        .onChange(of: rules) { _, new in Store.saveRules(new) }
     }
 }

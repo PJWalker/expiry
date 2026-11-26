@@ -3,3 +3,7 @@ build/
 DerivedData/
 .DS_Store
 xcuserdata/
+App/Info.plist
+App/MailExpiry.entitlements
+Extension/Info.plist
+Extension/MailExpiryExtension.entitlements

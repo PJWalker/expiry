@@ -25,7 +25,8 @@ final class MessageActionHandler: NSObject, MEMessageActionHandler {
             return
         }
 
-        let received = message.dateReceived ?? Date()
+        // MEMessage has no received date; the handler runs as the message arrives.
+        let received = Date()
         var tracked = TrackedMessage(messageID: id, subject: message.subject, from: from,
                                      received: received, snippet: MessageText.extract(raw))
         switch rule?.outcome {

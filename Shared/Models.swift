@@ -93,7 +93,7 @@ struct TrackedMessage: Codable, Identifiable {
     var source: Source = .model
     var relevantUntil: Date?   // for .dated: last day the message matters
     var archiveAt: Date?       // nil = never archive
-    var colored = false        // Mail background color applied for current category
+    var colored = false        // legacy: a background color was set in Mail and must be cleared
     var reason: String?        // model's one-line explanation, if any
     var supersedeChecked: Bool? // older same-sender messages were checked against this one
 
@@ -138,7 +138,6 @@ struct TrackedMessage: Codable, Identifiable {
         self.category = category
         self.source = source
         self.relevantUntil = relevantUntil
-        self.colored = false
         switch category {
         case .unassessed, .needsAttention:
             archiveAt = nil

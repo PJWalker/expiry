@@ -2,11 +2,11 @@
 
 Every new Inbox message is assessed by Apple's on-device model (Apple Intelligence, via Foundation Models). The archive date depends on the result:
 
-| Assessment | Example | Archived | Mail color |
-|---|---|---|---|
-| Fleeting | alerts, codes, newsletters, promos | 24h after arrival | orange |
-| Until a date | concert ticket, booking, invitation | end of the day after that date | yellow |
-| Needs attention | a person waiting for a reply, a bill | never | none |
+| Assessment | Example | Archived |
+|---|---|---|
+| Fleeting | alerts, codes, newsletters, promos | 24h after arrival |
+| Until a date | concert ticket, booking, invitation | end of the day after that date |
+| Needs attention | a person waiting for a reply, a bill | never |
 
 When unsure, the model is told to pick "needs attention". A message is never deleted, and it isn't archived if by then you've moved it out of the Inbox or flagged it.
 
@@ -29,7 +29,7 @@ When a sender has several messages being tracked, the Siri model checks whether 
 
 ## How it works
 - **Mail extension (MailKit action handler)**: MailKit can only act when a message arrives. The extension waits for the body, saves the sender, subject and a text excerpt to the shared App Group folder, and applies any matching rule.
-- **Menu bar app**: every 15 min it assesses new messages with the model, colors them in Mail, and archives overdue ones through AppleScript. It only touches Mail while Mail is running.
+- **Menu bar app**: every 15 min it assesses new messages with the model and archives overdue ones through AppleScript. It only touches Mail while Mail is running.
 - The text excerpt is used only by the on-device model. Kept messages are forgotten after 14 days.
 
 ## Build

@@ -2,8 +2,7 @@ import AppKit
 
 /// Every 15 min:
 /// 1. Assess new messages with the on-device model.
-/// 2. Color them in Mail (orange = fleeting, yellow = until a date).
-/// 3. For messages past their archive date: if no longer in the Inbox or flagged, they were
+/// 2. For messages past their archive date: if no longer in the Inbox or flagged, they were
 ///    handled; otherwise move them to the account's archive mailbox. Never deletes.
 /// Every decision and action is written to the decision log (if enabled).
 @MainActor
@@ -37,7 +36,6 @@ final class ExpiryEngine: ObservableObject {
         Store.save(m)
         DecisionLog.append(LogEntry(m, event: "overridden"))
         reload()
-        Task { await applyColors() }
     }
 
     /// "Always do this for this sender": adds a rule at the top.
@@ -104,7 +102,7 @@ final class ExpiryEngine: ObservableObject {
         await assessNew()
         scanStatus = "Checking for superseded messages…"
         await checkSuperseded()
-        await applyColors()
+        await clearOldColors()
         Task { await self.run() }   // archives anything superseded
         DecisionLog.append(LogEntry(messageID: "", subject: "Rescan", from: "",
                                     event: "rescan", detail: "\(found.count) in Inbox, \(added) assessed"))
@@ -124,7 +122,7 @@ final class ExpiryEngine: ObservableObject {
 
         // Don't launch Mail just to check; wait until the user has it open.
         guard Self.mailIsRunning else { return }
-        await applyColors()
+        await clearOldColors()
 
         for m in Store.loadAll() {
             guard let due = m.archiveAt, due <= Date() else { continue }
@@ -214,16 +212,12 @@ final class ExpiryEngine: ObservableObject {
         }
     }
 
-    private func applyColors() async {
+    /// Earlier versions colored messages in Mail. Clear any color they left behind.
+    private func clearOldColors() async {
         guard Self.mailIsRunning else { return }
-        for var m in Store.loadAll() where !m.colored && m.category != .unassessed {
-            let color = switch m.category {
-            case .fleeting: "orange"
-            case .dated: "yellow"
-            default: "none"
-            }
-            if case .success = MailBridge.setColor(messageID: m.messageID, color: color) {
-                m.colored = true
+        for var m in Store.loadAll() where m.colored {
+            if case .success = MailBridge.setColor(messageID: m.messageID, color: "none") {
+                m.colored = false
                 Store.save(m)
             }
         }

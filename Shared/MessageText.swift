@@ -16,6 +16,13 @@ enum MessageText {
         return String(body.prefix(limit))
     }
 
+    /// Tidies text that is already plain (e.g. Mail's AppleScript `content`).
+    static func clean(_ s: String, limit: Int = 3000) -> String {
+        String(s.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+    }
+
     private struct Part { var type: String; var encoding: String; var body: String }
 
     private static func split(_ s: String) -> (headers: String, body: String) {

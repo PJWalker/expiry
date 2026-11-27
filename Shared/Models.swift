@@ -34,6 +34,18 @@ struct Rule: Codable, Identifiable, Hashable {
         }
     }
 
+    /// What to do with older messages from the same sender when a new one arrives.
+    enum Supersede: String, Codable, CaseIterable {
+        case assess, always, never
+        var label: String {
+            switch self {
+            case .assess: "Siri decides if newest replaces older"
+            case .always: "Newest always replaces older"
+            case .never: "Never archive older ones"
+            }
+        }
+    }
+
     var id = UUID()
     var enabled = true
     var field: Field = .from
@@ -41,6 +53,12 @@ struct Rule: Codable, Identifiable, Hashable {
     var value = ""
     var outcome: Outcome = .fleeting
     var days = 7
+    var supersede: Supersede?   // optional so older rules.json files still decode
+
+    /// A per-sender rule as managed by the Senders pane.
+    var senderAddress: String? {
+        field == .from && op == .contains && value.contains("@") ? value.lowercased() : nil
+    }
 
     func matches(from: [String], to: [String], subject: String) -> Bool {
         guard enabled, !value.isEmpty else { return false }
@@ -75,16 +93,51 @@ struct TrackedMessage: Codable, Identifiable {
     var source: Source = .model
     var relevantUntil: Date?   // for .dated: last day the message matters
     var archiveAt: Date?       // nil = never archive
-    var colored = false        // Mail background color applied for current category
+    var colored = false        // legacy: a background color was set in Mail and must be cleared
+    var reason: String?        // model's one-line explanation, if any
+    var supersedeChecked: Bool? // older same-sender messages were checked against this one
+
+    /// Lower-cased sender address, e.g. "jane@x.com".
+    var senderAddress: String { Self.address(from) }
+
+    /// "Jane <jane@x.com>" -> "jane@x.com"
+    static func address(_ raw: String) -> String {
+        if let l = raw.lastIndex(of: "<"), let r = raw.lastIndex(of: ">"), l < r {
+            return String(raw[raw.index(after: l)..<r]).lowercased()
+        }
+        return raw.trimmingCharacters(in: .whitespaces).lowercased()
+    }
 
     var id: String { messageID }
+
+    /// Old messages (e.g. from a rescan) whose archive date already passed get a day's grace,
+    /// so nothing is archived before you've had a chance to see the decision.
+    mutating func clampToFuture(now: Date = Date()) {
+        if let a = archiveAt, a < now { archiveAt = now.addingTimeInterval(Config.fleetingInterval) }
+    }
+
+    /// Applies a matching rule's outcome. Leaves the message unassessed for .assess / no rule.
+    mutating func apply(_ rule: Rule?) {
+        switch rule?.outcome {
+        case .fleeting?:
+            set(.fleeting, source: .rule)
+        case .keep?:
+            set(.needsAttention, source: .rule)
+        case .afterDays?:
+            category = .dated
+            source = .rule
+            archiveAt = received.addingTimeInterval(TimeInterval(rule!.days) * 86_400)
+        default:
+            break
+        }
+        if rule != nil, category != .unassessed { reason = "Rule: \(rule!.field.rawValue) \(rule!.op.rawValue) \"\(rule!.value)\"" }
+    }
 
     /// Sets category and recomputes the archive date.
     mutating func set(_ category: Category, source: Source, relevantUntil: Date? = nil, now: Date = Date()) {
         self.category = category
         self.source = source
         self.relevantUntil = relevantUntil
-        self.colored = false
         switch category {
         case .unassessed, .needsAttention:
             archiveAt = nil
@@ -115,5 +168,9 @@ enum Config {
     /// Gmail users should set "[Gmail]/All Mail".
     static var archiveMailboxName: String {
         UserDefaults(suiteName: appGroup)?.string(forKey: "archiveMailbox") ?? "Archive"
+    }
+    /// Decision logging, on by default.
+    static var logDecisions: Bool {
+        UserDefaults(suiteName: appGroup)?.object(forKey: "logDecisions") as? Bool ?? true
     }
 }

@@ -11,10 +11,9 @@ struct MessagesView: View {
         .overlay {
             if engine.messages.isEmpty {
                 ContentUnavailableView("No messages yet", systemImage: "tray",
-                                       description: Text("New Inbox messages appear here once the Mail extension is enabled."))
+                                       description: Text("New Inbox messages appear here once the Mail extension is enabled. Use Rescan Inbox to assess messages already there."))
             }
         }
-        .frame(minWidth: 640, minHeight: 400)
         .onAppear { engine.reload() }
     }
 }
@@ -29,6 +28,9 @@ private struct MessageRow: View {
                 Text(message.subject).fontWeight(.medium).lineLimit(1)
                 Text(message.from).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Text(status).font(.caption).foregroundStyle(.secondary)
+                if let reason = message.reason {
+                    Text(reason).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
+                }
             }
             Spacer()
             Picker("", selection: Binding(

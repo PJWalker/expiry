@@ -3,8 +3,6 @@ import SwiftUI
 /// Manual overrides. The first matching rule wins; anything unmatched is assessed by the Siri model.
 struct RulesView: View {
     @State private var rules = Store.loadRules()
-    @AppStorage("archiveMailbox", store: UserDefaults(suiteName: Config.appGroup))
-    private var archiveMailbox = "Archive"
 
     var body: some View {
         Form {
@@ -37,13 +35,8 @@ struct RulesView: View {
             } footer: {
                 Text("First matching rule wins. Everything else is assessed by the on-device Siri model.")
             }
-            Section("Archive") {
-                TextField("Archive mailbox name", text: $archiveMailbox)
-                Text("Gmail: use [Gmail]/All Mail").font(.caption).foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 760, height: 440)
         .onChange(of: rules) { _, new in Store.saveRules(new) }
     }
 }

@@ -6,7 +6,7 @@ options:
     macOS: "26.0"   # Foundation Models (on-device Apple Intelligence model) needs macOS 26
 settings:
   base:
-    DEVELOPMENT_TEAM: ""                   # TODO: your Team ID
+    DEVELOPMENT_TEAM: JKTY8WVAP5
     SWIFT_VERSION: "5.9"
     ENABLE_HARDENED_RUNTIME: YES
 targets:

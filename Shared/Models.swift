@@ -106,7 +106,7 @@ struct TrackedMessage: Codable, Identifiable {
 }
 
 enum Config {
-    static let appGroup = "TEAMID.com.example.mailexpiry"   // TODO: must match entitlements (Team ID prefix)
+    static let appGroup = "JKTY8WVAP5.com.example.mailexpiry"   // must match entitlements: <Team ID>.<suffix>
     static let fleetingInterval: TimeInterval = 24 * 60 * 60
     static let datedGraceDays = 1
     /// Kept messages (no archive date) are forgotten after this long.

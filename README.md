@@ -21,7 +21,7 @@ When unsure, the model is told to pick "needs attention". A message is never del
 
 ## Build
 1. `brew install xcodegen && xcodegen` in this folder, open `MailExpiry.xcodeproj`.
-2. Set your Team ID and bundle prefix in `project.yml`, and `Config.appGroup` in `Shared/Models.swift` to `<TEAMID>.com.example.mailexpiry`.
+2. Team ID is set in `project.yml` and `Config.appGroup` (`Shared/Models.swift`). Change both together if the team changes.
 3. Run the app, then enable the extension in Mail > Settings > Extensions.
 4. Allow Automation access to Mail when macOS asks.
 

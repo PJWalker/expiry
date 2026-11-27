@@ -5,13 +5,15 @@ import AppKit
 /// 2. Color them in Mail (orange = fleeting, yellow = until a date).
 /// 3. For messages past their archive date: if no longer in the Inbox or flagged, they were
 ///    handled; otherwise move them to the account's archive mailbox. Never deletes.
+/// Every decision and action is written to the decision log (if enabled).
 @MainActor
 final class ExpiryEngine: ObservableObject {
     @Published var messages: [TrackedMessage] = []
     @Published var lastRun: Date?
     @Published var lastError: String?
+    @Published var scanStatus: String?
+    @Published var busy = false
     private var timer: Timer?
-    private var running = false
 
     var expiringCount: Int { messages.filter { $0.archiveAt != nil }.count }
 
@@ -26,11 +28,14 @@ final class ExpiryEngine: ObservableObject {
         messages = Store.loadAll().sorted { $0.received > $1.received }
     }
 
-    /// Manual override from the Messages window.
+    // MARK: Overrides
+
     func override(_ id: String, category: Category, until: Date? = nil) {
         guard var m = Store.loadAll().first(where: { $0.messageID == id }) else { return }
         m.set(category, source: .user, relevantUntil: until)
+        m.reason = nil
         Store.save(m)
+        DecisionLog.append(LogEntry(m, event: "overridden"))
         reload()
         Task { await applyColors() }
     }
@@ -47,10 +52,55 @@ final class ExpiryEngine: ObservableObject {
         Store.saveRules(rules)
     }
 
+    // MARK: Rescan
+
+    /// Reads messages already in the Inbox (the extension only sees new arrivals) and assesses them.
+    /// - days: how far back to look (0 = everything in the Inbox)
+    /// - reassess: also re-run the model on messages it already assessed (your manual choices are kept)
+    func rescan(days: Int, reassess: Bool) async {
+        guard !busy else { return }
+        guard Self.mailIsRunning else { lastError = "Open Mail to rescan."; return }
+        busy = true
+        defer { busy = false; scanStatus = nil; reload() }
+        lastError = nil
+        scanStatus = "Reading Inbox…"
+
+        let found: [MailBridge.InboxMessage]
+        switch MailBridge.inboxMessages(days: days) {
+        case .success(let list): found = list
+        case .failure(let err): lastError = "Rescan failed: \(err.localizedDescription)"; return
+        }
+
+        let rules = Store.loadRules()
+        let existing = Dictionary(Store.loadAll().map { ($0.messageID, $0) }, uniquingKeysWith: { a, _ in a })
+        var added = 0
+        for f in found {
+            if let old = existing[f.messageID] {
+                guard reassess, old.source == .model else { continue }
+            }
+            let rule = rules.first { $0.matches(from: [f.from], to: [], subject: f.subject) }
+            if rule?.outcome == .ignore { continue }
+            var m = TrackedMessage(messageID: f.messageID, subject: f.subject, from: f.from,
+                                   received: f.received, snippet: MessageText.clean(f.content))
+            m.apply(rule)
+            m.clampToFuture()
+            Store.save(m)
+            DecisionLog.append(LogEntry(m, event: "rescanned"))
+            added += 1
+        }
+        scanStatus = "Assessing \(added) messages…"
+        await assessNew()
+        await applyColors()
+        DecisionLog.append(LogEntry(messageID: "", subject: "Rescan", from: "",
+                                    event: "rescan", detail: "\(found.count) in Inbox, \(added) assessed"))
+    }
+
+    // MARK: Periodic run
+
     func run() async {
-        guard !running else { return }
-        running = true
-        defer { running = false; lastRun = Date(); reload() }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false; lastRun = Date(); reload() }
         lastError = nil
 
         await assessNew()
@@ -63,8 +113,13 @@ final class ExpiryEngine: ObservableObject {
         for m in Store.loadAll() {
             guard let due = m.archiveAt, due <= Date() else { continue }
             switch MailBridge.expire(messageID: m.messageID, archiveMailbox: Config.archiveMailboxName) {
-            case .success: Store.remove(m.messageID)   // archived, handled or gone
-            case .failure(let err): lastError = err.localizedDescription
+            case .success(let outcome):
+                Store.remove(m.messageID)
+                let event = switch outcome { case .archived: "archived"; case .handled: "handled"; case .notFound: "gone" }
+                DecisionLog.append(LogEntry(m, event: event, detail: outcome == .notFound ? "No longer in Inbox" : nil))
+            case .failure(let err):
+                lastError = err.localizedDescription
+                DecisionLog.append(LogEntry(m, event: "error", detail: err.localizedDescription))
             }
         }
     }
@@ -76,9 +131,10 @@ final class ExpiryEngine: ObservableObject {
             lastError = Classifier.unavailableReason
             return
         }
-        for var m in pending {
+        for (i, var m) in pending.enumerated() {
+            if scanStatus != nil { scanStatus = "Assessing \(i + 1) of \(pending.count)…" }
             do {
-                let (category, date) = try await Classifier.assess(m)
+                let (category, date, reason) = try await Classifier.assess(m)
                 // Re-read in case the user overrode it while the model was running.
                 guard Store.loadAll().first(where: { $0.messageID == m.messageID })?.category == .unassessed else { continue }
                 m.set(category, source: .model, relevantUntil: date)
@@ -86,9 +142,13 @@ final class ExpiryEngine: ObservableObject {
                 if category == .dated, let at = m.archiveAt, at < m.received.addingTimeInterval(Config.fleetingInterval) {
                     m.set(.fleeting, source: .model)
                 }
+                m.reason = reason
+                m.clampToFuture()
                 Store.save(m)
+                DecisionLog.append(LogEntry(m, event: "decided"))
             } catch {
                 lastError = "Assessment failed: \(error.localizedDescription)"
+                DecisionLog.append(LogEntry(m, event: "error", detail: "Assessment failed: \(error.localizedDescription)"))
             }
         }
     }

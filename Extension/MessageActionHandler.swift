@@ -21,6 +21,8 @@ final class MessageActionHandler: NSObject, MEMessageActionHandler {
         let to = message.toAddresses.map(\.rawString)
         let rule = Store.loadRules().first { $0.matches(from: [from], to: to, subject: message.subject) }
         if rule?.outcome == .ignore {
+            DecisionLog.append(.init(messageID: id, subject: message.subject, from: from,
+                                     event: "ignored", detail: "Matched an ignore rule"), process: .extension)
             completionHandler(nil)
             return
         }
@@ -29,19 +31,9 @@ final class MessageActionHandler: NSObject, MEMessageActionHandler {
         let received = Date()
         var tracked = TrackedMessage(messageID: id, subject: message.subject, from: from,
                                      received: received, snippet: MessageText.extract(raw))
-        switch rule?.outcome {
-        case .fleeting?:
-            tracked.set(.fleeting, source: .rule)
-        case .keep?:
-            tracked.set(.needsAttention, source: .rule)
-        case .afterDays?:
-            tracked.category = .dated
-            tracked.source = .rule
-            tracked.archiveAt = received.addingTimeInterval(TimeInterval(rule!.days) * 86_400)
-        default:
-            break   // .unassessed: the app runs the model
-        }
+        tracked.apply(rule)   // no rule / .assess: stays unassessed and the app runs the model
         Store.save(tracked)
+        DecisionLog.append(.init(tracked, event: tracked.category == .unassessed ? "received" : "decided"), process: .extension)
         completionHandler(nil)
     }
 

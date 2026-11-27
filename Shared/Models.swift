@@ -76,8 +76,32 @@ struct TrackedMessage: Codable, Identifiable {
     var relevantUntil: Date?   // for .dated: last day the message matters
     var archiveAt: Date?       // nil = never archive
     var colored = false        // Mail background color applied for current category
+    var reason: String?        // model's one-line explanation, if any
 
     var id: String { messageID }
+
+    /// Old messages (e.g. from a rescan) whose archive date already passed get a day's grace,
+    /// so nothing is archived before you've had a chance to see the decision.
+    mutating func clampToFuture(now: Date = Date()) {
+        if let a = archiveAt, a < now { archiveAt = now.addingTimeInterval(Config.fleetingInterval) }
+    }
+
+    /// Applies a matching rule's outcome. Leaves the message unassessed for .assess / no rule.
+    mutating func apply(_ rule: Rule?) {
+        switch rule?.outcome {
+        case .fleeting?:
+            set(.fleeting, source: .rule)
+        case .keep?:
+            set(.needsAttention, source: .rule)
+        case .afterDays?:
+            category = .dated
+            source = .rule
+            archiveAt = received.addingTimeInterval(TimeInterval(rule!.days) * 86_400)
+        default:
+            break
+        }
+        if rule != nil, category != .unassessed { reason = "Rule: \(rule!.field.rawValue) \(rule!.op.rawValue) \"\(rule!.value)\"" }
+    }
 
     /// Sets category and recomputes the archive date.
     mutating func set(_ category: Category, source: Source, relevantUntil: Date? = nil, now: Date = Date()) {
@@ -115,5 +139,9 @@ enum Config {
     /// Gmail users should set "[Gmail]/All Mail".
     static var archiveMailboxName: String {
         UserDefaults(suiteName: appGroup)?.string(forKey: "archiveMailbox") ?? "Archive"
+    }
+    /// Decision logging, on by default.
+    static var logDecisions: Bool {
+        UserDefaults(suiteName: appGroup)?.object(forKey: "logDecisions") as? Bool ?? true
     }
 }

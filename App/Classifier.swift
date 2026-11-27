@@ -24,6 +24,9 @@ struct Assessment {
 
     @Guide(description: "Only for dated: the last date the message matters (e.g. the concert date), as YYYY-MM-DD. Otherwise an empty string.")
     var relevantDate: String
+
+    @Guide(description: "One short sentence explaining the choice.")
+    var reason: String
 }
 
 enum Classifier {
@@ -39,7 +42,7 @@ enum Classifier {
         }
     }
 
-    static func assess(_ m: TrackedMessage) async throws -> (Category, Date?) {
+    static func assess(_ m: TrackedMessage) async throws -> (Category, Date?, String) {
         let session = LanguageModelSession(instructions: """
         You sort incoming email so the user's inbox stays clean. Classify the message and, \
         for dated messages, give the date after which it no longer matters. \
@@ -57,11 +60,11 @@ enum Classifier {
         let result = try await session.respond(to: prompt, generating: Assessment.self)
         let a = result.content
         switch a.kind {
-        case .fleeting: return (.fleeting, nil)
-        case .needsAttention: return (.needsAttention, nil)
+        case .fleeting: return (.fleeting, nil, a.reason)
+        case .needsAttention: return (.needsAttention, nil, a.reason)
         case .dated:
             let date = dateFmt.date(from: a.relevantDate.trimmingCharacters(in: .whitespaces))
-            return (.dated, date)
+            return (.dated, date, a.reason)
         }
     }
 }

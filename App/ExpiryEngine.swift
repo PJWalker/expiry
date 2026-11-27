@@ -48,8 +48,20 @@ final class ExpiryEngine: ObservableObject {
         case .needsAttention, .unassessed: .keep
         case .dated: .assess   // dates differ per message, so keep asking the model
         }
-        rules.insert(Rule(field: .from, op: .contains, value: Self.address(m.from), outcome: outcome), at: 0)
+        setSenderRule(m.senderAddress, outcome: outcome, days: 7, supersede: nil, rules: &rules)
         Store.saveRules(rules)
+    }
+
+    /// Creates, updates or (with nil outcome and supersede) removes the rule for one sender.
+    /// Sender rules go at the top so they beat broader rules.
+    func setSenderRule(_ address: String, outcome: Rule.Outcome?, days: Int, supersede: Rule.Supersede?,
+                       rules: inout [Rule]) {
+        rules.removeAll { $0.senderAddress == address }
+        guard outcome != nil || supersede != nil else { return }
+        var r = Rule(field: .from, op: .contains, value: address, outcome: outcome ?? .assess)
+        r.days = days
+        r.supersede = supersede
+        rules.insert(r, at: 0)
     }
 
     // MARK: Rescan
@@ -90,7 +102,10 @@ final class ExpiryEngine: ObservableObject {
         }
         scanStatus = "Assessing \(added) messages…"
         await assessNew()
+        scanStatus = "Checking for superseded messages…"
+        await checkSuperseded()
         await applyColors()
+        Task { await self.run() }   // archives anything superseded
         DecisionLog.append(LogEntry(messageID: "", subject: "Rescan", from: "",
                                     event: "rescan", detail: "\(found.count) in Inbox, \(added) assessed"))
     }
@@ -104,6 +119,7 @@ final class ExpiryEngine: ObservableObject {
         lastError = nil
 
         await assessNew()
+        await checkSuperseded()
         forgetOldKept()
 
         // Don't launch Mail just to check; wait until the user has it open.
@@ -153,6 +169,51 @@ final class ExpiryEngine: ObservableObject {
         }
     }
 
+    /// For each sender with several tracked messages, ask whether the newest makes the older
+    /// ones obsolete; those are archived on this run. A sender rule can force always / never.
+    private func checkSuperseded() async {
+        let rules = Store.loadRules()
+        let all = Store.loadAll().filter { $0.category != .unassessed }
+        let groups = Dictionary(grouping: all, by: \.senderAddress)
+        for (address, msgs) in groups where msgs.count > 1 {
+            let sorted = msgs.sorted { $0.received > $1.received }
+            var newest = sorted[0]
+            guard newest.supersedeChecked != true else { continue }
+            // Don't touch messages you set by hand.
+            let older = Array(sorted.dropFirst().filter { $0.source != .user }.prefix(8))
+            let setting = rules.first { $0.senderAddress == address }?.supersede ?? .assess
+
+            var obsolete: [TrackedMessage] = []
+            var why = ""
+            switch setting {
+            case .never:
+                break
+            case .always:
+                obsolete = older
+                why = "Sender rule: newest replaces older"
+            case .assess:
+                guard !older.isEmpty, Classifier.isAvailable else { break }
+                do {
+                    let (idx, reason) = try await Classifier.obsolete(newest: newest, older: older)
+                    obsolete = idx.map { older[$0] }
+                    why = reason
+                } catch {
+                    lastError = "Obsolescence check failed: \(error.localizedDescription)"
+                    continue   // try again next run
+                }
+            }
+
+            for var m in obsolete {
+                m.archiveAt = Date()
+                m.reason = "Superseded by “\(newest.subject)”. \(why)"
+                Store.save(m)
+                DecisionLog.append(LogEntry(m, event: "superseded"))
+            }
+            newest.supersedeChecked = true
+            Store.save(newest)
+        }
+    }
+
     private func applyColors() async {
         guard Self.mailIsRunning else { return }
         for var m in Store.loadAll() where !m.colored && m.category != .unassessed {
@@ -177,13 +238,5 @@ final class ExpiryEngine: ObservableObject {
 
     static var mailIsRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").isEmpty
-    }
-
-    /// "Jane <jane@x.com>" -> "jane@x.com"
-    static func address(_ raw: String) -> String {
-        if let l = raw.lastIndex(of: "<"), let r = raw.lastIndex(of: ">"), l < r {
-            return String(raw[raw.index(after: l)..<r])
-        }
-        return raw.trimmingCharacters(in: .whitespaces)
     }
 }

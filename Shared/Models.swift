@@ -34,6 +34,18 @@ struct Rule: Codable, Identifiable, Hashable {
         }
     }
 
+    /// What to do with older messages from the same sender when a new one arrives.
+    enum Supersede: String, Codable, CaseIterable {
+        case assess, always, never
+        var label: String {
+            switch self {
+            case .assess: "Siri decides if newest replaces older"
+            case .always: "Newest always replaces older"
+            case .never: "Never archive older ones"
+            }
+        }
+    }
+
     var id = UUID()
     var enabled = true
     var field: Field = .from
@@ -41,6 +53,12 @@ struct Rule: Codable, Identifiable, Hashable {
     var value = ""
     var outcome: Outcome = .fleeting
     var days = 7
+    var supersede: Supersede?   // optional so older rules.json files still decode
+
+    /// A per-sender rule as managed by the Senders pane.
+    var senderAddress: String? {
+        field == .from && op == .contains && value.contains("@") ? value.lowercased() : nil
+    }
 
     func matches(from: [String], to: [String], subject: String) -> Bool {
         guard enabled, !value.isEmpty else { return false }
@@ -77,6 +95,18 @@ struct TrackedMessage: Codable, Identifiable {
     var archiveAt: Date?       // nil = never archive
     var colored = false        // Mail background color applied for current category
     var reason: String?        // model's one-line explanation, if any
+    var supersedeChecked: Bool? // older same-sender messages were checked against this one
+
+    /// Lower-cased sender address, e.g. "jane@x.com".
+    var senderAddress: String { Self.address(from) }
+
+    /// "Jane <jane@x.com>" -> "jane@x.com"
+    static func address(_ raw: String) -> String {
+        if let l = raw.lastIndex(of: "<"), let r = raw.lastIndex(of: ">"), l < r {
+            return String(raw[raw.index(after: l)..<r]).lowercased()
+        }
+        return raw.trimmingCharacters(in: .whitespaces).lowercased()
+    }
 
     var id: String { messageID }
 

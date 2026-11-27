@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// The app's single window: sidebar with Messages, Rules, Log and Settings.
+/// The app's single window: sidebar with Messages, Senders, Rules, Log and Settings.
 struct MainView: View {
     enum Pane: String, CaseIterable, Identifiable {
-        case messages = "Messages", rules = "Rules", log = "Log", settings = "Settings"
+        case messages = "Messages", senders = "Senders", rules = "Rules", log = "Log", settings = "Settings"
         var id: Self { self }
         var icon: String {
             switch self {
             case .messages: "tray"
+            case .senders: "person.2"
             case .rules: "line.3.horizontal.decrease.circle"
             case .log: "list.bullet.rectangle"
             case .settings: "gearshape"
@@ -29,6 +30,7 @@ struct MainView: View {
             Group {
                 switch pane {
                 case .messages: MessagesView()
+                case .senders: SendersView()
                 case .rules: RulesView()
                 case .log: LogView()
                 case .settings: SettingsPane()

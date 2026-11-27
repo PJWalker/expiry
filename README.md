@@ -17,11 +17,15 @@ When unsure, the model is told to pick "needs attention". A message is never del
 ## The window
 Menu bar > Open Mail Expiry… opens one window with a sidebar:
 - **Messages**: tracked messages, their assessment, the model's reason and archive date, and per-message overrides.
+- **Senders**: manual handling per sender. This covers how their messages are treated, and whether a new message replaces older ones (Siri decides, always, or never). It's stored as sender rules at the top of Rules.
 - **Rules**: overrides by sender, recipient or subject.
 - **Log**: every decision and action (received, decided, overridden, archived, handled, gone, ignored, error), searchable. Logging can be turned off. The log is kept as JSON lines in the App Group folder (Show in Finder).
 - **Settings**: archive mailbox, logging, and model and Mail status.
 
 **Rescan Inbox** (toolbar) assesses messages already in the Inbox, from the last 7, 30 or 90 days or the whole Inbox. The extension only sees new arrivals. It skips flagged messages and your manual choices, and can optionally re-assess messages the model already judged. Anything already overdue gets 24 hours' grace, so you can review it before it's archived.
+
+## Older messages from the same sender
+When a sender has several messages being tracked, the Siri model checks whether the newest one makes the older ones obsolete. Examples: a newer shipping update, a revised bill, this week's newsletter. Obsolete ones are archived on the same run. Your manual choices and flagged messages are never touched. When unsure, the model keeps a message. Each sender's newest message is checked once, and at most 8 older messages are compared with it.
 
 ## How it works
 - **Mail extension (MailKit action handler)**: MailKit can only act when a message arrives. The extension waits for the body, saves the sender, subject and a text excerpt to the shared App Group folder, and applies any matching rule.
